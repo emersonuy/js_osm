@@ -1,6 +1,6 @@
 window.onload = main;
 
-var map_data = "";
+var map_data = null;
 var xml_parser = null;
 var xml_doc = null;
 
@@ -11,28 +11,59 @@ var tmp_ctx = null;
 var ways = null;
 var i = 0;
 var bbox = null;
-var zoom = 100;
+var zoom = 7;
+
+var pixels_per_km = 0;
 
 function main() {
+	window.addEventListener("keyup", handle_key_up);
 	document.getElementById('files').addEventListener('change', handleFileSelect, false);
 	canvas = document.getElementById("main_canvas");
 
 	tmp_canvas = document.createElement("canvas");
 }
 
+function handle_key_up(e) {
+	if (e.keyCode === 87) { // Up
+		zoom--;
+	}
+	else if (e.keyCode === 83) { // Down
+		zoom++;
+	}
+
+	if (zoom < 5) {
+		zoom = 5;
+	}
+
+	if (zoom > 12) {
+		zoom = 12;
+	}
+
+	if (map_data !== null) {
+		console.log("zoom: " + zoom);
+		i=0;
+		render_map();
+		window.requestAnimationFrame(handle_frame);
+	}
+}
 
 function handle_frame() {
-	loop();
-	loop();
-	loop();
+	var ret = loop();
+	ret = loop();
+	ret = loop();
 	clear();
 	flip();
+
+	if (ret >= ways.length) {
+		return;
+	}
+
 	window.requestAnimationFrame(handle_frame);
 }
 
 function loop() {
 	if (i>= ways.length) {
-		return;
+		return i;
 	}
 
 		var nodes = ways[i].getElementsByTagName("nd");
@@ -56,7 +87,7 @@ function loop() {
 			}
 		}
 
-		var line_width = 1;
+		var line_width = 2;
 		if (is_highway === false) {
 			line_width = 1;
 		}
@@ -98,14 +129,16 @@ function loop() {
 			xy2.x = xy2.x - bbox.left;
 			xy2.y = (bbox.top - xy2.y);
 
-			xy1.x *= zoom;
-			xy1.y *= zoom;
-			xy2.x *= zoom;
-			xy2.y *= zoom;
+			xy1.x *= pixels_per_km;
+			xy1.y *= pixels_per_km;
+			xy2.x *= pixels_per_km;
+			xy2.y *= pixels_per_km;
 
 			draw_line(xy1.x, xy1.y, xy2.x, xy2.y, line_width);
 		}
 	i++;
+
+	return i;
 }
 
 function handleFileSelect(evt) {
@@ -116,9 +149,13 @@ function handleFileSelect(evt) {
 
 		reader.onload = (function(theFile) {
 			return function(e) {
+				map_data = null;
 				map_data = e.target.result;
+				xml_parser = new DOMParser();
+				xml_doc = xml_parser.parseFromString(map_data, "text/xml");
+
 				render_map();
-				flip();
+				window.requestAnimationFrame(handle_frame);
 			}
 		})(f);
 
@@ -137,10 +174,9 @@ function get_node(nodes, ref) {
 }
 
 function render_map() {
-	xml_parser = new DOMParser();
-	xml_doc = xml_parser.parseFromString(map_data, "text/xml");
-
+	i=0;
 	var bounds = xml_doc.getElementsByTagName("bounds");
+	var mid_lat = 0;
 	bbox = {left: 0, right: 0, top: 0, bottom: 0};
 
 	for (var i=0; i<bounds.length; i++) {
@@ -148,13 +184,23 @@ function render_map() {
 		bbox.right = latlon_to_xy(0, bounds[i].getAttribute("maxlon")).x;
 		bbox.top = latlon_to_xy(bounds[i].getAttribute("maxlat"), 0).y;
 		bbox.bottom = latlon_to_xy(bounds[i].getAttribute("minlat"), 0).y;
+		mid_lat = (bounds[i].getAttribute("maxlat") - bounds[i].getAttribute("minlat")) / 2;
+		mid_lat = (bounds[i].getAttribute("minlat") - 0) + mid_lat;
 	}
 
-	tmp_canvas.width = (bbox.right - bbox.left) * zoom;
-	tmp_canvas.height = (bbox.top - bbox.bottom) * zoom;
+	console.log(bbox.right - bbox.left);
 
-	canvas.width = window.innerWidth;
-	canvas.height = (tmp_canvas.height * canvas.width) / tmp_canvas.width;
+	pixels_per_km = get_pixels_per_km(mid_lat, zoom);
+	console.log("mid_lat: " + mid_lat + "   pixels_per_km: " + pixels_per_km);
+
+	tmp_canvas.width = (bbox.right - bbox.left) * pixels_per_km;
+	tmp_canvas.height = (bbox.top - bbox.bottom) * pixels_per_km;
+
+	// canvas.width = window.innerWidth;
+	// canvas.height = (tmp_canvas.height * canvas.width) / tmp_canvas.width;
+
+	canvas.width = tmp_canvas.width;
+	canvas.height = tmp_canvas.height;
 
 	ctx = canvas.getContext("2d");
 
@@ -163,8 +209,6 @@ function render_map() {
 	console.log(bbox);
 
 	ways = xml_doc.getElementsByTagName("way");
-
-	window.requestAnimationFrame(handle_frame);
 }
 
 function latlon_to_xy(lat, lon) {
@@ -200,4 +244,8 @@ function clear() {
 function flip() {
 //	ctx.drawImage(tmp_canvas, 0, 0, tmp_canvas.width, tmp_canvas.height, 0, 0, canvas.width, canvas.height);
 	ctx.drawImage(tmp_canvas, 0, 0, tmp_canvas.width, tmp_canvas.height, 0, 0, canvas.width, canvas.height);
+}
+
+function get_pixels_per_km(lat, zoom) {
+	return 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoom);
 }
