@@ -8,8 +8,6 @@ var canvas = null;
 var tmp_canvas = null;
 var ctx = null;
 var tmp_ctx = null;
-var x_ratio = 0;
-var y_ratio = 0;
 
 function main() {
 	document.getElementById('files').addEventListener('change', handleFileSelect, false);
@@ -65,11 +63,6 @@ function render_map() {
 
 	tmp_canvas.width = bbox.right;
 	tmp_canvas.height = bbox.top;
-	// tmp_canvas.height = window.innerHeight;
-	// tmp_canvas.width = window.innerWidth;
-
-	x_ratio = bbox.right / tmp_canvas.width;
-	y_ratio = bbox.top / tmp_canvas.height;
 
 	tmp_ctx = tmp_canvas.getContext("2d");
 
@@ -149,17 +142,6 @@ function render_map() {
 	}
 }
 
-function convert() {
-	var lat = document.getElementById("input_lat").value;
-	var lon = document.getElementById("input_lon").value;
-
-	var xy = latlon_to_xy(lat, lon);
-
-	document.getElementById("output_x").value = xy.x;
-	document.getElementById("output_y").value = xy.y;
-
-}
-
 function latlon_to_xy(lat, lon) {
 	// var RAD2DEG = 180 / Math.PI;
 	var PI_4 = Math.PI / 4;
@@ -178,21 +160,13 @@ function draw_dot(x, y, radius) {
 }
 
 function draw_line(x1, y1, x2, y2) {
-	// x1 = x1 * x_ratio;
-	// x2 = x2 * x_ratio;
-
-	// y1 = y1 * y_ratio;
-	// y2 = y2 * y_ratio;
-
 	tmp_ctx.beginPath();
 	tmp_ctx.moveTo(x1, y1);
 	tmp_ctx.lineTo(x2, y2);
-	tmp_ctx.lineWidth=5;
+	tmp_ctx.lineWidth=3;
 	tmp_ctx.stroke();
 }
 
 function flip() {
-	console.log(canvas.width + ", " + canvas.height);
-
-	ctx.drawImage(tmp_canvas, 0, 0, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+	ctx.drawImage(tmp_canvas, 0, 0, tmp_canvas.width, tmp_canvas.height);
 }
