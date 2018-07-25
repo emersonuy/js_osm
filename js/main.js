@@ -14,9 +14,6 @@ function main() {
 	canvas = document.getElementById("main_canvas");
 
 	tmp_canvas = document.createElement("canvas");
-	canvas.width = window.innerWidth;
-	canvas.height = window.innerHeight;
-	ctx = canvas.getContext("2d");
 }
 
 function handleFileSelect(evt) {
@@ -61,8 +58,13 @@ function render_map() {
 		bbox.bottom = latlon_to_xy(bounds[i].getAttribute("minlat"), 0).y;
 	}
 
-	tmp_canvas.width = bbox.right;
-	tmp_canvas.height = bbox.top;
+	tmp_canvas.width = (bbox.right - bbox.left) * 1000;
+	tmp_canvas.height = (bbox.top - bbox.bottom) * 1000;
+
+	canvas.width = window.innerWidth;
+	canvas.height = (tmp_canvas.height * canvas.width) / tmp_canvas.width;
+
+	ctx = canvas.getContext("2d");
 
 	tmp_ctx = tmp_canvas.getContext("2d");
 
@@ -92,8 +94,9 @@ function render_map() {
 			}
 		}
 
+		var line_width = 2;
 		if (is_highway === false) {
-			continue;
+			line_width = 1;
 		}
 
 		console.log("way_name: " + way_name);
@@ -132,12 +135,13 @@ function render_map() {
 			xy2.x = xy2.x - bbox.left;
 			xy2.y = (bbox.top - xy2.y);
 
-			xy1.x *= 1000;
-			xy1.y *= 1000;
-			xy2.x *= 1000;
-			xy2.y *= 1000;
+			var zoom = 1000;
+			xy1.x *= zoom;
+			xy1.y *= zoom;
+			xy2.x *= zoom;
+			xy2.y *= zoom;
 
-			draw_line(xy1.x, xy1.y, xy2.x, xy2.y);
+			draw_line(xy1.x, xy1.y, xy2.x, xy2.y, line_width);
 		}
 	}
 }
@@ -159,14 +163,17 @@ function draw_dot(x, y, radius) {
 	tmp_ctx.fill();
 }
 
-function draw_line(x1, y1, x2, y2) {
+function draw_line(x1, y1, x2, y2, line_width) {
 	tmp_ctx.beginPath();
 	tmp_ctx.moveTo(x1, y1);
 	tmp_ctx.lineTo(x2, y2);
-	tmp_ctx.lineWidth=3;
+	tmp_ctx.lineWidth=line_width;
 	tmp_ctx.stroke();
 }
 
 function flip() {
-	ctx.drawImage(tmp_canvas, 0, 0, tmp_canvas.width, tmp_canvas.height);
+	console.log(tmp_canvas.width + ", " + tmp_canvas.height + "  " + canvas.width + ", " + canvas.height);
+
+//	ctx.drawImage(tmp_canvas, 0, 0, tmp_canvas.width, tmp_canvas.height, 0, 0, canvas.width, canvas.height);
+	ctx.drawImage(tmp_canvas, 0, 0, tmp_canvas.width, tmp_canvas.height, 0, 0, canvas.width, canvas.height);
 }
