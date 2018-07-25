@@ -8,12 +8,104 @@ var canvas = null;
 var tmp_canvas = null;
 var ctx = null;
 var tmp_ctx = null;
+var ways = null;
+var i = 0;
+var bbox = null;
+var zoom = 100;
 
 function main() {
 	document.getElementById('files').addEventListener('change', handleFileSelect, false);
 	canvas = document.getElementById("main_canvas");
 
 	tmp_canvas = document.createElement("canvas");
+}
+
+
+function handle_frame() {
+	loop();
+	loop();
+	loop();
+	clear();
+	flip();
+	window.requestAnimationFrame(handle_frame);
+}
+
+function loop() {
+	if (i>= ways.length) {
+		return;
+	}
+
+		var nodes = ways[i].getElementsByTagName("nd");
+		var tags = ways[i].getElementsByTagName("tag");
+
+		var way_name = "";
+
+		var is_highway = false;
+
+		for (var j=0; j<tags.length; j++) {
+			if (tags[j].getAttribute("k") === "name") {
+				way_name = tags[j].getAttribute("v");
+				break;
+			}
+		}
+
+		for (var j=0; j<tags.length; j++) {
+			if (tags[j].getAttribute("k") === "highway") {
+				is_highway = true;
+				break;
+			}
+		}
+
+		var line_width = 1;
+		if (is_highway === false) {
+			line_width = 1;
+		}
+
+		var pt1 = null;
+		var node_ref = null;
+		var node = null;
+		var lat = null;
+		var lon = null;
+		var xy1 = null;
+		var xy2 = null;
+
+		for (var j=0; j<nodes.length;) {
+			node_ref = nodes[j].getAttribute("ref");
+			// node = get_node(xml_doc.getElementsByTagName("node"), node_ref);
+
+			node = xml_doc.getElementById(node_ref);
+
+			lat = node.getAttribute("lat");
+			lon = node.getAttribute("lon");
+
+			xy1 = latlon_to_xy(lat, lon);
+
+			if (++j < nodes.length) {
+				node_ref = nodes[j].getAttribute("ref");
+				node = xml_doc.getElementById(node_ref);//get_node(xml_doc.getElementsByTagName("node"), node_ref);
+				lat = node.getAttribute("lat");
+				lon = node.getAttribute("lon");
+
+				xy2 = latlon_to_xy(lat, lon);
+			}
+			else {
+				continue;
+			}
+
+			xy1.x = xy1.x - bbox.left;
+			xy1.y = (bbox.top - xy1.y);
+
+			xy2.x = xy2.x - bbox.left;
+			xy2.y = (bbox.top - xy2.y);
+
+			xy1.x *= zoom;
+			xy1.y *= zoom;
+			xy2.x *= zoom;
+			xy2.y *= zoom;
+
+			draw_line(xy1.x, xy1.y, xy2.x, xy2.y, line_width);
+		}
+	i++;
 }
 
 function handleFileSelect(evt) {
@@ -49,7 +141,7 @@ function render_map() {
 	xml_doc = xml_parser.parseFromString(map_data, "text/xml");
 
 	var bounds = xml_doc.getElementsByTagName("bounds");
-	var bbox = {left: 0, right: 0, top: 0, bottom: 0};
+	bbox = {left: 0, right: 0, top: 0, bottom: 0};
 
 	for (var i=0; i<bounds.length; i++) {
 		bbox.left = latlon_to_xy(0, bounds[i].getAttribute("minlon")).x;
@@ -58,8 +150,8 @@ function render_map() {
 		bbox.bottom = latlon_to_xy(bounds[i].getAttribute("minlat"), 0).y;
 	}
 
-	tmp_canvas.width = (bbox.right - bbox.left) * 1000;
-	tmp_canvas.height = (bbox.top - bbox.bottom) * 1000;
+	tmp_canvas.width = (bbox.right - bbox.left) * zoom;
+	tmp_canvas.height = (bbox.top - bbox.bottom) * zoom;
 
 	canvas.width = window.innerWidth;
 	canvas.height = (tmp_canvas.height * canvas.width) / tmp_canvas.width;
@@ -70,80 +162,9 @@ function render_map() {
 
 	console.log(bbox);
 
-	var ways = xml_doc.getElementsByTagName("way");
+	ways = xml_doc.getElementsByTagName("way");
 
-	for (var i=0; i<ways.length; i++) {
-		var nodes = ways[i].getElementsByTagName("nd");
-		var tags = ways[i].getElementsByTagName("tag");
-
-		var way_name = "";
-
-		var is_highway = false;
-
-		for (var j=0; j<tags.length; j++) {
-			if (tags[j].getAttribute("k") === "name") {
-				way_name = tags[j].getAttribute("v");
-				break;
-			}
-		}
-
-		for (var j=0; j<tags.length; j++) {
-			if (tags[j].getAttribute("k") === "highway") {
-				is_highway = true;
-				break;
-			}
-		}
-
-		var line_width = 2;
-		if (is_highway === false) {
-			line_width = 1;
-		}
-
-		console.log("way_name: " + way_name);
-
-		var pt1 = null;
-		var node_ref = null;
-		var node = null;
-		var lat = null;
-		var lon = null;
-		var xy1 = null;
-		var xy2 = null;
-
-		for (var j=0; j<nodes.length;) {
-			node_ref = nodes[j].getAttribute("ref");
-			node = get_node(xml_doc.getElementsByTagName("node"), node_ref);
-			lat = node.getAttribute("lat");
-			lon = node.getAttribute("lon");
-
-			xy1 = latlon_to_xy(lat, lon);
-
-			if (++j < nodes.length) {
-				node_ref = nodes[j].getAttribute("ref");
-				node = get_node(xml_doc.getElementsByTagName("node"), node_ref);
-				lat = node.getAttribute("lat");
-				lon = node.getAttribute("lon");
-
-				xy2 = latlon_to_xy(lat, lon);
-			}
-			else {
-				continue;
-			}
-
-			xy1.x = xy1.x - bbox.left;
-			xy1.y = (bbox.top - xy1.y);
-
-			xy2.x = xy2.x - bbox.left;
-			xy2.y = (bbox.top - xy2.y);
-
-			var zoom = 1000;
-			xy1.x *= zoom;
-			xy1.y *= zoom;
-			xy2.x *= zoom;
-			xy2.y *= zoom;
-
-			draw_line(xy1.x, xy1.y, xy2.x, xy2.y, line_width);
-		}
-	}
+	window.requestAnimationFrame(handle_frame);
 }
 
 function latlon_to_xy(lat, lon) {
@@ -171,9 +192,12 @@ function draw_line(x1, y1, x2, y2, line_width) {
 	tmp_ctx.stroke();
 }
 
-function flip() {
-	console.log(tmp_canvas.width + ", " + tmp_canvas.height + "  " + canvas.width + ", " + canvas.height);
+function clear() {
+	ctx.fillStyle = "white";
+	ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
 
+function flip() {
 //	ctx.drawImage(tmp_canvas, 0, 0, tmp_canvas.width, tmp_canvas.height, 0, 0, canvas.width, canvas.height);
 	ctx.drawImage(tmp_canvas, 0, 0, tmp_canvas.width, tmp_canvas.height, 0, 0, canvas.width, canvas.height);
 }
