@@ -11,9 +11,17 @@ var tmp_ctx = null;
 var ways = null;
 var i = 0;
 var bbox = null;
-var zoom = 7;
+var zoom = 8;
 
 var pixels_per_km = 0;
+
+var latitude_height = 0.00956;
+var longitude_width = 0.01187;
+
+var minlat = 0;
+var minlon = 0;
+var maxlat = 0;
+var maxlon = 0;
 
 function main() {
 	window.addEventListener("keyup", handle_key_up);
@@ -21,6 +29,55 @@ function main() {
 	canvas = document.getElementById("main_canvas");
 
 	tmp_canvas = document.createElement("canvas");
+
+	getLocation(function(position) {
+	    console.log("Latitude: " + position.coords.latitude +
+	    " Longitude: " + position.coords.longitude);
+
+	    minlat = position.coords.latitude - (latitude_height / 2);
+	    minlon = position.coords.longitude - (longitude_width / 2);
+	    maxlat = position.coords.latitude + (latitude_height / 2);
+	    maxlon = position.coords.longitude + (longitude_width / 2);
+
+	    getMap(minlat, minlon, maxlat, maxlon, function(map_data) {
+	    	map_data = map_data;
+			xml_parser = new DOMParser();
+			xml_doc = xml_parser.parseFromString(map_data, "text/xml");
+
+			render_map();
+			window.requestAnimationFrame(handle_frame);
+	    });
+	});
+}
+
+function getLocation(callback) {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(callback);
+    } else {
+        console.log("Geolocation is not supported by this browser.");
+    }
+}
+
+function getMap(minlat, minlon, maxlat, maxlon, callback) {
+	var query = "node(" + minlat + "," + minlon + "," + maxlat + "," + maxlon + ");";
+	query += "way(bn);( ._; >; );";
+//	query += "(._;>;);";
+	query += "out meta;";
+
+	var xhttp = new XMLHttpRequest();
+
+	var self = this;
+	self.callback = callback;
+	xhttp.onreadystatechange = function() {
+		if (this.readyState == 4 && this.status == 200) {
+			self.callback(this.responseText);
+		}
+	};
+
+	console.log(query);
+
+	xhttp.open("GET", "https://lz4.overpass-api.de/api/interpreter?data=" + query, true);
+	xhttp.send();
 }
 
 function handle_key_up(e) {
@@ -175,18 +232,17 @@ function get_node(nodes, ref) {
 
 function render_map() {
 	i=0;
-	var bounds = xml_doc.getElementsByTagName("bounds");
 	var mid_lat = 0;
+
 	bbox = {left: 0, right: 0, top: 0, bottom: 0};
 
-	for (var i=0; i<bounds.length; i++) {
-		bbox.left = latlon_to_xy(0, bounds[i].getAttribute("minlon")).x;
-		bbox.right = latlon_to_xy(0, bounds[i].getAttribute("maxlon")).x;
-		bbox.top = latlon_to_xy(bounds[i].getAttribute("maxlat"), 0).y;
-		bbox.bottom = latlon_to_xy(bounds[i].getAttribute("minlat"), 0).y;
-		mid_lat = (bounds[i].getAttribute("maxlat") - bounds[i].getAttribute("minlat")) / 2;
-		mid_lat = (bounds[i].getAttribute("minlat") - 0) + mid_lat;
-	}
+	bbox.left = latlon_to_xy(0, minlon).x;
+	bbox.right = latlon_to_xy(0, maxlon).x;
+	bbox.top = latlon_to_xy(maxlat, 0).y;
+	bbox.bottom = latlon_to_xy(minlat, 0).y;
+
+	mid_lat = (maxlat - minlat) / 2;
+	mid_lat = (minlat - 0) + mid_lat;
 
 	console.log(bbox.right - bbox.left);
 
