@@ -11,12 +11,15 @@ var tmp_ctx = null;
 var ways = null;
 var i = 0;
 var bbox = null;
-var zoom = 8;
+var zoom = 7;
 
 var pixels_per_km = 0;
 
 var latitude_height = 0.00956;
 var longitude_width = 0.01187;
+
+var curr_lat = 0;
+var curr_lon = 0;
 
 var minlat = 0;
 var minlon = 0;
@@ -25,7 +28,6 @@ var maxlon = 0;
 
 function main() {
 	window.addEventListener("keyup", handle_key_up);
-	document.getElementById('files').addEventListener('change', handleFileSelect, false);
 	canvas = document.getElementById("main_canvas");
 
 	tmp_canvas = document.createElement("canvas");
@@ -34,14 +36,16 @@ function main() {
 	    console.log("Latitude: " + position.coords.latitude +
 	    " Longitude: " + position.coords.longitude);
 
+	    curr_lat = position.coords.latitude;
+	    curr_lon = position.coords.longitude;
+
 	    minlat = position.coords.latitude - (latitude_height / 2);
 	    minlon = position.coords.longitude - (longitude_width / 2);
 	    maxlat = position.coords.latitude + (latitude_height / 2);
 	    maxlon = position.coords.longitude + (longitude_width / 2);
 
 	    getMap(minlat, minlon, maxlat, maxlon, function(map_data) {
-	    	map_data = map_data;
-			xml_parser = new DOMParser();
+				xml_parser = new DOMParser();
 			xml_doc = xml_parser.parseFromString(map_data, "text/xml");
 
 			render_map();
@@ -81,10 +85,10 @@ function getMap(minlat, minlon, maxlat, maxlon, callback) {
 }
 
 function handle_key_up(e) {
-	if (e.keyCode === 87) { // Up
+	if (e.keyCode === 187) { // +
 		zoom--;
 	}
-	else if (e.keyCode === 83) { // Down
+	else if (e.keyCode === 189) { // -
 		zoom++;
 	}
 
@@ -96,7 +100,7 @@ function handle_key_up(e) {
 		zoom = 12;
 	}
 
-	if (map_data !== null) {
+	if (xml_doc !== null) {
 		console.log("zoom: " + zoom);
 		i=0;
 		render_map();
@@ -108,7 +112,11 @@ function handle_frame() {
 	var ret = loop();
 	ret = loop();
 	ret = loop();
+
+	draw_current_position();
+
 	clear();
+	
 	flip();
 
 	if (ret >= ways.length) {
@@ -116,6 +124,20 @@ function handle_frame() {
 	}
 
 	window.requestAnimationFrame(handle_frame);
+}
+
+function draw_current_position() {
+	var pos_xy = latlon_to_xy(curr_lat, curr_lon);
+
+	pos_xy.x = pos_xy.x - (bbox.left);
+	pos_xy.y = (bbox.top - pos_xy.y);
+
+	pos_xy.x *= pixels_per_km;
+	pos_xy.y *= pixels_per_km;
+
+	//console.log(pos_xy);
+
+	draw_dot(pos_xy.x, pos_xy.y, 5);
 }
 
 function loop() {
@@ -196,28 +218,6 @@ function loop() {
 	i++;
 
 	return i;
-}
-
-function handleFileSelect(evt) {
-	var files = evt.target.files; // FileList object
-
-	for (var i = 0, f; f = files[i]; i++) {
-		var reader = new FileReader();
-
-		reader.onload = (function(theFile) {
-			return function(e) {
-				map_data = null;
-				map_data = e.target.result;
-				xml_parser = new DOMParser();
-				xml_doc = xml_parser.parseFromString(map_data, "text/xml");
-
-				render_map();
-				window.requestAnimationFrame(handle_frame);
-			}
-		})(f);
-
-		reader.readAsText(f);
-	}
 }
 
 function get_node(nodes, ref) {
