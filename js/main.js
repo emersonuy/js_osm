@@ -16,12 +16,14 @@ var map_config = {
 
 var zoom = 7;
 
-var latitude_height = 0.00956;
-var longitude_width = 0.01187;
+var latitude_height = 0.01187;
+var longitude_width = 0.00956;
 
 var curr_lat = 0;
 var curr_lon = 0;
 var curr_xy = 0;
+
+var timer = 0;
 
 function main() {
 	getLocation(function(position) {
@@ -42,10 +44,67 @@ function main() {
 			xml_doc = xml_parser.parseFromString(map_data, "text/xml");
 
 			map_config = start_render(xml_doc, boundary, zoom);
-			console.log(map_config);
 			window.requestAnimationFrame(handle_frame);
 	    });
 	});
+}
+
+function handle_timeout() {
+	getLocation(function(position) {
+	    curr_lat = position.coords.latitude;
+	    curr_lon = position.coords.longitude;
+
+		curr_xy = latlon_to_xy(curr_lat, curr_lon);
+		curr_xy.x = curr_xy.x - (map_config.bbox.left);
+		curr_xy.y = (map_config.bbox.top - curr_xy.y);
+
+		curr_xy.x *= map_config.pixels_per_km;
+		curr_xy.y *= map_config.pixels_per_km;
+
+		clear();
+		flip();
+		draw_current_position();
+
+	    var new_boundary = {};
+
+	    new_boundary.minlat = position.coords.latitude - (latitude_height / 2);
+	    new_boundary.minlon = position.coords.longitude - (longitude_width / 2);
+	    new_boundary.maxlat = position.coords.latitude + (latitude_height / 2);
+	    new_boundary.maxlon = position.coords.longitude + (longitude_width / 2);
+
+		if (is_need_fetch_new_map(new_boundary, map_config.boundary) === true) {
+			console.log("updating map");
+		    getMap(new_boundary, function(map_data) {
+				xml_parser = new DOMParser();
+				xml_doc = xml_parser.parseFromString(map_data, "text/xml");
+
+				map_config = start_render(xml_doc, boundary, zoom);
+				window.requestAnimationFrame(handle_frame);
+		    });
+		}
+		else {
+			console.log("no need update");
+		}
+	});
+}
+
+function is_need_fetch_new_map(new_boundary, current_boundary) {
+	var is_need = false;
+
+	var diff_minlon = Math.abs(new_boundary.minlon - current_boundary.minlon);
+	var diff_maxlon = Math.abs(new_boundary.maxlon - current_boundary.maxlon);
+	var diff_minlat = Math.abs(new_boundary.minlat - current_boundary.minlat);
+	var diff_maxlat = Math.abs(new_boundary.maxlat - current_boundary.maxlat);
+
+	var lat_threshold = latitude_height * 0.1;
+	var lon_threshold = longitude_width * 0.1;
+
+	if (diff_minlon >= lon_threshold || diff_maxlon >= lon_threshold ||
+		diff_minlat >= lat_threshold || diff_maxlat >= lat_threshold) {
+		is_need = true;
+	}
+
+	return is_need;
 }
 
 function getLocation(callback) {
@@ -78,17 +137,29 @@ function getMap(boundary, callback) {
 	xhttp.send();
 }
 
-function handle_frame() {
-	render_map(map_config.render_index, map_config.ways, map_config.bbox, map_config.pixels_per_km);
-	map_config.render_index++;
+var total_elapsed = 0;
+var time_limit = 500;
+var curr_time = 0;
+var last_time = 0;
 
-	clear();
-	flip();
+function handle_frame() {
+	curr_time = new Date().getTime();
+	last_time = curr_time;
+	total_elapsed = 0;
+
+	while (total_elapsed < time_limit) {
+		render_map(map_config.render_index, map_config.ways, map_config.bbox, map_config.pixels_per_km);
+		map_config.render_index++;
+
+		curr_time = new Date().getTime();
+		total_elapsed += (curr_time - last_time);
+		last_time = curr_time;
+	}
 
 	if (map_config.render_index >= map_config.ways.length) {
-		draw_current_position();
 		clear();
 		flip();
+		draw_current_position();
 
 		return;
 	}
@@ -103,6 +174,7 @@ function start_render(xml_doc, boundary, zoom) {
 
 	config.pixels_per_km = get_pixels_per_km(map_lat_width, zoom);;
 
+	config.boundary = boundary;
 	config.bbox = {};
 	config.bbox.left = latlon_to_xy(0, boundary.minlon).x;;
 	config.bbox.right = latlon_to_xy(0, boundary.maxlon).x;
@@ -118,6 +190,8 @@ function start_render(xml_doc, boundary, zoom) {
 	config.main_canvas.width = window.innerWidth;
 	config.main_canvas.height = window.innerHeight;
 
+	console.log(config.main_canvas.width + ", " + config.main_canvas.height + "  --  " + config.sub_canvas.width + ", " + config.sub_canvas.height);
+
 	config.main_ctx = config.main_canvas.getContext("2d");
 	config.sub_ctx = config.sub_canvas.getContext("2d");
 
@@ -132,10 +206,16 @@ function start_render(xml_doc, boundary, zoom) {
 	curr_xy.x *= config.pixels_per_km;
 	curr_xy.y *= config.pixels_per_km;
 
+	timer = setInterval(handle_timeout, 1000);
+
 	return config;
 }
 
 function render_map(i, ways, bbox, pixels_per_km) {
+	if (i >= ways.length) {
+		return;
+	}
+
 	var nodes = ways[i].getElementsByTagName("nd");
 	var tags = ways[i].getElementsByTagName("tag");
 
@@ -225,10 +305,16 @@ function draw_current_position() {
 }
 
 function draw_dot(x, y, radius) {
-	map_config.sub_ctx.beginPath();
-	map_config.sub_ctx.arc(x, y, radius, 0, 2 * Math.PI);
-	map_config.sub_ctx.fillStyle = "red";
-	map_config.sub_ctx.fill();
+	var x1 = curr_xy.x - (map_config.main_canvas.width / 2);
+	var y1 = curr_xy.y - (map_config.main_canvas.height / 2);
+
+	x -= x1;
+	y -= y1;
+
+	map_config.main_ctx.beginPath();
+	map_config.main_ctx.arc(x, y, radius, 0, 2 * Math.PI);
+	map_config.main_ctx.fillStyle = "red";
+	map_config.main_ctx.fill();
 }
 
 function draw_line(x1, y1, x2, y2, line_width) {
