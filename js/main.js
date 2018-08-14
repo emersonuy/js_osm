@@ -4,45 +4,51 @@ var map_data = null;
 var xml_parser = null;
 var xml_doc = null;
 
-var map_config = {
-	boundary: {minlat: 0, maxlat: 0, minlon: 0, maxlon: 0},
-	bbox: {left: 0, right: 0, top: 0, bottom: 0},
-	pixels_per_km: 0,
-	main_canvas: null,
-	sub_canvas: null,
-	zoom: 0,
-	render_index: 0
-};
-
+var canvas = null;
+var tmp_canvas = null;
+var ctx = null;
+var tmp_ctx = null;
+var ways = null;
+var i = 0;
+var bbox = null;
 var zoom = 7;
+
+var pixels_per_km = 0;
 
 var latitude_height = 0.00956;
 var longitude_width = 0.01187;
 
 var curr_lat = 0;
 var curr_lon = 0;
-var curr_xy = 0;
+
+var minlat = 0;
+var minlon = 0;
+var maxlat = 0;
+var maxlon = 0;
 
 function main() {
+	window.addEventListener("keyup", handle_key_up);
+	canvas = document.getElementById("main_canvas");
+
+	tmp_canvas = document.createElement("canvas");
+
 	getLocation(function(position) {
-	    console.log("Latitude: " + position.coords.latitude + " Longitude: " + position.coords.longitude);
+	    console.log("Latitude: " + position.coords.latitude +
+	    " Longitude: " + position.coords.longitude);
 
 	    curr_lat = position.coords.latitude;
 	    curr_lon = position.coords.longitude;
 
-	    var boundary = {};
+	    minlat = position.coords.latitude - (latitude_height / 2);
+	    minlon = position.coords.longitude - (longitude_width / 2);
+	    maxlat = position.coords.latitude + (latitude_height / 2);
+	    maxlon = position.coords.longitude + (longitude_width / 2);
 
-	    boundary.minlat = position.coords.latitude - (latitude_height / 2);
-	    boundary.minlon = position.coords.longitude - (longitude_width / 2);
-	    boundary.maxlat = position.coords.latitude + (latitude_height / 2);
-	    boundary.maxlon = position.coords.longitude + (longitude_width / 2);
-
-	    getMap(boundary, function(map_data) {
-			xml_parser = new DOMParser();
+	    getMap(minlat, minlon, maxlat, maxlon, function(map_data) {
+				xml_parser = new DOMParser();
 			xml_doc = xml_parser.parseFromString(map_data, "text/xml");
 
-			map_config = start_render(xml_doc, boundary, zoom);
-			console.log(map_config);
+			render_map();
 			window.requestAnimationFrame(handle_frame);
 	    });
 	});
@@ -56,8 +62,8 @@ function getLocation(callback) {
     }
 }
 
-function getMap(boundary, callback) {
-	var query = "node(" + boundary.minlat + "," + boundary.minlon + "," + boundary.maxlat + "," + boundary.maxlon + ");";
+function getMap(minlat, minlon, maxlat, maxlon, callback) {
+	var query = "node(" + minlat + "," + minlon + "," + maxlat + "," + maxlon + ");";
 	query += "way(bn);( ._; >; );";
 //	query += "(._;>;);";
 	query += "out meta;";
@@ -78,136 +84,191 @@ function getMap(boundary, callback) {
 	xhttp.send();
 }
 
+function handle_key_up(e) {
+	if (e.keyCode === 187) { // +
+		zoom--;
+	}
+	else if (e.keyCode === 189) { // -
+		zoom++;
+	}
+
+	if (zoom < 5) {
+		zoom = 5;
+	}
+
+	if (zoom > 12) {
+		zoom = 12;
+	}
+
+	if (xml_doc !== null) {
+		console.log("zoom: " + zoom);
+		i=0;
+		render_map();
+		window.requestAnimationFrame(handle_frame);
+	}
+}
+
 function handle_frame() {
-	render_map(map_config.render_index, map_config.ways, map_config.bbox, map_config.pixels_per_km);
-	map_config.render_index++;
+	var ret = loop();
+	ret = loop();
+	ret = loop();
+
+	draw_current_position();
 
 	clear();
+	
 	flip();
 
-	if (map_config.render_index >= map_config.ways.length) {
-		draw_current_position();
-		clear();
-		flip();
-
+	if (ret >= ways.length) {
 		return;
 	}
 
 	window.requestAnimationFrame(handle_frame);
 }
 
-function start_render(xml_doc, boundary, zoom) {
-	var map_lat_width = (boundary.maxlat - boundary.minlat);
+function draw_current_position() {
+	var pos_xy = latlon_to_xy(curr_lat, curr_lon);
 
-	var config = {};
+	pos_xy.x = pos_xy.x - (bbox.left);
+	pos_xy.y = (bbox.top - pos_xy.y);
 
-	config.pixels_per_km = get_pixels_per_km(map_lat_width, zoom);;
+	pos_xy.x *= pixels_per_km;
+	pos_xy.y *= pixels_per_km;
 
-	config.bbox = {};
-	config.bbox.left = latlon_to_xy(0, boundary.minlon).x;;
-	config.bbox.right = latlon_to_xy(0, boundary.maxlon).x;
-	config.bbox.top = latlon_to_xy(boundary.maxlat, 0).y;
-	config.bbox.bottom = latlon_to_xy(boundary.minlat, 0).y;
+	//console.log(pos_xy);
 
-	config.main_canvas = document.getElementById("main_canvas");
-	config.sub_canvas = document.createElement("canvas");
-
-	config.sub_canvas.width = (config.bbox.right - config.bbox.left) * config.pixels_per_km;
-	config.sub_canvas.height = (config.bbox.top - config.bbox.bottom) * config.pixels_per_km;
-
-	config.main_canvas.width = window.innerWidth;
-	config.main_canvas.height = window.innerHeight;
-
-	config.main_ctx = config.main_canvas.getContext("2d");
-	config.sub_ctx = config.sub_canvas.getContext("2d");
-
-	config.ways = xml_doc.getElementsByTagName("way");
-
-	config.render_index = 0;
-
-	curr_xy = latlon_to_xy(curr_lat, curr_lon);
-	curr_xy.x = curr_xy.x - (config.bbox.left);
-	curr_xy.y = (config.bbox.top - curr_xy.y);
-
-	curr_xy.x *= config.pixels_per_km;
-	curr_xy.y *= config.pixels_per_km;
-
-	return config;
+	draw_dot(pos_xy.x, pos_xy.y, 5);
 }
 
-function render_map(i, ways, bbox, pixels_per_km) {
-	var nodes = ways[i].getElementsByTagName("nd");
-	var tags = ways[i].getElementsByTagName("tag");
+function loop() {
+	if (i>= ways.length) {
+		return i;
+	}
 
-	var way_name = "";
+		var nodes = ways[i].getElementsByTagName("nd");
+		var tags = ways[i].getElementsByTagName("tag");
 
-	var is_highway = false;
+		var way_name = "";
 
-	for (var j=0; j<tags.length; j++) {
-		if (tags[j].getAttribute("k") === "name") {
-			way_name = tags[j].getAttribute("v");
-			break;
+		var is_highway = false;
+
+		for (var j=0; j<tags.length; j++) {
+			if (tags[j].getAttribute("k") === "name") {
+				way_name = tags[j].getAttribute("v");
+				break;
+			}
 		}
-	}
 
-	for (var j=0; j<tags.length; j++) {
-		if (tags[j].getAttribute("k") === "highway") {
-			is_highway = true;
-			break;
+		for (var j=0; j<tags.length; j++) {
+			if (tags[j].getAttribute("k") === "highway") {
+				is_highway = true;
+				break;
+			}
 		}
-	}
 
-	var line_width = 2;
-	if (is_highway === false) {
-		line_width = 1;
-	}
+		var line_width = 2;
+		if (is_highway === false) {
+			line_width = 1;
+		}
 
-	var pt1 = null;
-	var node_ref = null;
-	var node = null;
-	var lat = null;
-	var lon = null;
-	var xy1 = null;
-	var xy2 = null;
+		var pt1 = null;
+		var node_ref = null;
+		var node = null;
+		var lat = null;
+		var lon = null;
+		var xy1 = null;
+		var xy2 = null;
 
-	for (var j=0; j<nodes.length;) {
-		node_ref = nodes[j].getAttribute("ref");
-
-		node = xml_doc.getElementById(node_ref);
-
-		lat = node.getAttribute("lat");
-		lon = node.getAttribute("lon");
-
-		xy1 = latlon_to_xy(lat, lon);
-
-		if (++j < nodes.length) {
+		for (var j=0; j<nodes.length;) {
 			node_ref = nodes[j].getAttribute("ref");
+			// node = get_node(xml_doc.getElementsByTagName("node"), node_ref);
+
 			node = xml_doc.getElementById(node_ref);
+
 			lat = node.getAttribute("lat");
 			lon = node.getAttribute("lon");
 
-			xy2 = latlon_to_xy(lat, lon);
+			xy1 = latlon_to_xy(lat, lon);
+
+			if (++j < nodes.length) {
+				node_ref = nodes[j].getAttribute("ref");
+				node = xml_doc.getElementById(node_ref);//get_node(xml_doc.getElementsByTagName("node"), node_ref);
+				lat = node.getAttribute("lat");
+				lon = node.getAttribute("lon");
+
+				xy2 = latlon_to_xy(lat, lon);
+			}
+			else {
+				continue;
+			}
+
+			xy1.x = xy1.x - bbox.left;
+			xy1.y = (bbox.top - xy1.y);
+
+			xy2.x = xy2.x - bbox.left;
+			xy2.y = (bbox.top - xy2.y);
+
+			xy1.x *= pixels_per_km;
+			xy1.y *= pixels_per_km;
+			xy2.x *= pixels_per_km;
+			xy2.y *= pixels_per_km;
+
+			draw_line(xy1.x, xy1.y, xy2.x, xy2.y, line_width);
 		}
-		else {
-			continue;
+	i++;
+
+	return i;
+}
+
+function get_node(nodes, ref) {
+	for (var i=0; i<nodes.length; i++) {
+		if (nodes[i].getAttribute("id") === ref) {
+			return nodes[i];
 		}
-
-		xy1.x = xy1.x - bbox.left;
-		xy1.y = (bbox.top - xy1.y);
-
-		xy2.x = xy2.x - bbox.left;
-		xy2.y = (bbox.top - xy2.y);
-
-		xy1.x *= pixels_per_km;
-		xy1.y *= pixels_per_km;
-		xy2.x *= pixels_per_km;
-		xy2.y *= pixels_per_km;
-
-		draw_line(xy1.x, xy1.y, xy2.x, xy2.y, line_width);
 	}
+
+	return null;
+}
+
+function render_map() {
+	i=0;
+	var mid_lat = 0;
+
+	bbox = {left: 0, right: 0, top: 0, bottom: 0};
+
+	bbox.left = latlon_to_xy(0, minlon).x;
+	bbox.right = latlon_to_xy(0, maxlon).x;
+	bbox.top = latlon_to_xy(maxlat, 0).y;
+	bbox.bottom = latlon_to_xy(minlat, 0).y;
+
+	mid_lat = (maxlat - minlat) / 2;
+	mid_lat = (minlat - 0) + mid_lat;
+
+	console.log(bbox.right - bbox.left);
+
+	pixels_per_km = get_pixels_per_km(mid_lat, zoom);
+	console.log("mid_lat: " + mid_lat + "   pixels_per_km: " + pixels_per_km);
+
+	tmp_canvas.width = (bbox.right - bbox.left) * pixels_per_km;
+	tmp_canvas.height = (bbox.top - bbox.bottom) * pixels_per_km;
+
+	// canvas.width = window.innerWidth;
+	// canvas.height = (tmp_canvas.height * canvas.width) / tmp_canvas.width;
+
+	canvas.width = tmp_canvas.width;
+	canvas.height = tmp_canvas.height;
+
+	ctx = canvas.getContext("2d");
+
+	tmp_ctx = tmp_canvas.getContext("2d");
+
+	console.log(bbox);
+
+	ways = xml_doc.getElementsByTagName("way");
 }
 
 function latlon_to_xy(lat, lon) {
+	// var RAD2DEG = 180 / Math.PI;
 	var PI_4 = Math.PI / 4;
 
 	var x = (lon * Math.PI / 180) * 6371;
@@ -216,39 +277,31 @@ function latlon_to_xy(lat, lon) {
 	return {x: x, y: y, z: 0};
 }
 
-function get_pixels_per_km(lat, zoom) {
-	return 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoom);
-}
-
-function draw_current_position() {
-	draw_dot(curr_xy.x, curr_xy.y, 5);
-}
-
 function draw_dot(x, y, radius) {
-	map_config.sub_ctx.beginPath();
-	map_config.sub_ctx.arc(x, y, radius, 0, 2 * Math.PI);
-	map_config.sub_ctx.fillStyle = "red";
-	map_config.sub_ctx.fill();
+	tmp_ctx.beginPath();
+	tmp_ctx.arc(x, y, radius, 0, 2 * Math.PI);
+	tmp_ctx.fillStyle = "red";
+	tmp_ctx.fill();
 }
 
 function draw_line(x1, y1, x2, y2, line_width) {
-	map_config.sub_ctx.beginPath();
-	map_config.sub_ctx.moveTo(x1, y1);
-	map_config.sub_ctx.lineTo(x2, y2);
-	map_config.sub_ctx.lineWidth=line_width;
-	map_config.sub_ctx.stroke();
+	tmp_ctx.beginPath();
+	tmp_ctx.moveTo(x1, y1);
+	tmp_ctx.lineTo(x2, y2);
+	tmp_ctx.lineWidth=line_width;
+	tmp_ctx.stroke();
 }
 
 function clear() {
-	map_config.main_ctx.fillStyle = "white";
-	map_config.main_ctx.fillRect(0, 0, main_canvas.width, main_canvas.height);
+	ctx.fillStyle = "white";
+	ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
 function flip() {
-	var x = curr_xy.x - (map_config.main_canvas.width / 2);
-	var y = curr_xy.y - (map_config.main_canvas.height / 2);
+//	ctx.drawImage(tmp_canvas, 0, 0, tmp_canvas.width, tmp_canvas.height, 0, 0, canvas.width, canvas.height);
+	ctx.drawImage(tmp_canvas, 0, 0, tmp_canvas.width, tmp_canvas.height, 0, 0, canvas.width, canvas.height);
+}
 
-	map_config.main_ctx.drawImage(map_config.sub_canvas,
-		x, y, map_config.main_canvas.width, map_config.main_canvas.height,
-		0, 0, map_config.main_canvas.width, map_config.main_canvas.height);
+function get_pixels_per_km(lat, zoom) {
+	return 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoom);
 }
