@@ -73,6 +73,7 @@ function handle_timeout() {
 	    new_boundary.maxlon = position.coords.longitude + (longitude_width / 2);
 
 		if (is_need_fetch_new_map(new_boundary, map_config.boundary) === true) {
+			clearInterval(timer);
 			console.log("updating map");
 		    getMap(new_boundary, function(map_data) {
 				xml_parser = new DOMParser();
